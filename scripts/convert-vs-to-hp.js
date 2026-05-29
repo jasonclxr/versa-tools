@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const childProcess = require("child_process");
+const { parse } = require("csv-parse/sync");
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline/promises");
@@ -33,6 +34,46 @@ const SOURCE_COLUMNS = {
   shortTermFuelTrim: "Short term fuel trim (primary sensor) (%)",
   vehicleSpeed: "Vehicle speed (mph)",
 };
+
+const STATIC_VALUES = new Map([
+  ["Fuel System #1 Status (SAE)", "---"],
+  ["Intake Cam Des Angle", 0],
+  ["Intake Cam Angle", 0],
+  ["Exhaust Cam Des Angle", 0],
+  ["Exhaust Cam Angle", 0],
+  ["Fuel Pressure", 0],
+  ["Fuel Rail Pressure (SAE)", 0],
+  ["Actual Engine Torque (SAE)", 0],
+  ["Mass Airflow Sensor", 0],
+  ["Engine Fuel Rate (SAE)", 0],
+  ["Injector Pulse Width", 0],
+  ["Catalyst Temp B1S1 (SAE)", 0],
+  ["Control Module Voltage", 0],
+  ["Fuel Level Input (SAE)", 0],
+]);
+
+const DIRECT_VALUE_SOURCES = new Map([
+  ["Offset", ({ row }) => row[SOURCE_COLUMNS.time]],
+  ["Knock Retard", ({ row }) => row[SOURCE_COLUMNS.knockRetard]],
+  ["Short Term Fuel Trim Bank 1", ({ row }) => row[SOURCE_COLUMNS.shortTermFuelTrim]],
+  ["Long Term Fuel Trim Bank 1", ({ row }) => row[SOURCE_COLUMNS.longTermFuelTrim]],
+  ["Timing Advance", ({ row }) => row[SOURCE_COLUMNS.timingAdvance]],
+  ["Timing Advance (SAE)", ({ row }) => row[SOURCE_COLUMNS.timingAdvance]],
+  ["Engine RPM", ({ row }) => row[SOURCE_COLUMNS.rpm]],
+  ["Engine RPM (SAE)", ({ row }) => row[SOURCE_COLUMNS.rpm]],
+  ["Accelerator Position D (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
+  ["Commanded Throttle Actuator (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
+  ["Relative Throttle Position (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
+  ["Accelerator Pedal Position", ({ row }) => row[SOURCE_COLUMNS.throttle]],
+  ["Throttle Position (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
+  ["Long Term Fuel Trim Bank 1 (SAE)", ({ row }) => row[SOURCE_COLUMNS.longTermFuelTrim]],
+  ["Short Term Fuel Trim Bank 1 (SAE)", ({ row }) => row[SOURCE_COLUMNS.shortTermFuelTrim]],
+  ["Vehicle Speed", ({ row }) => row[SOURCE_COLUMNS.vehicleSpeed]],
+  ["Intake Air Temp (SAE)", ({ row }) => row[SOURCE_COLUMNS.intakeAirTemp]],
+  ["Intake Air Temp", ({ row }) => row[SOURCE_COLUMNS.manifoldAirTemp]],
+  ["Engine Coolant Temp", ({ row }) => row[SOURCE_COLUMNS.coolantTemp]],
+  ["Ambient Air Temp", ({ row }) => row[SOURCE_COLUMNS.intakeAirTemp]],
+]);
 
 async function main() {
   const { inputPath, outputPath, referencePath } = await parseArgs(process.argv.slice(2));
@@ -79,23 +120,9 @@ async function parseArgs(argv) {
   return { inputPath, outputPath, referencePath };
 }
 
-function printUsage() {
-  console.log(
-    [
-      "Usage:",
-      "  node scripts/convert-avo-to-hp.js [input.csv] [output.csv] [reference.csv]",
-      "",
-      "Examples:",
-      "  node scripts/convert-avo-to-hp.js",
-      '  node scripts/convert-avo-to-hp.js "/Users/Jason/Downloads/AVO ND2 - v2.05 MF - Gas Station Run.csv"',
-      '  node scripts/convert-avo-to-hp.js "input.csv" "converted.csv" "HP Log format - All Channels.csv"',
-    ].join("\n"),
-  );
-}
-
 function buildDefaultOutputPath(inputPath) {
   const parsed = path.parse(path.resolve(inputPath));
-  return path.join(parsed.dir, `${parsed.name} - HP format${parsed.ext || ".csv"}`);
+  return path.join(parsed.dir, `HP Format - ${parsed.name} ${parsed.ext || ".csv"}`);
 }
 
 async function resolveInputPath(explicitInputPath) {
@@ -182,31 +209,27 @@ function readReferenceTemplate(referencePath) {
 
   return {
     headerLines,
-    labels: parseCsvLine(labelsLine),
+    labels: parseCsvRow(labelsLine),
   };
 }
 
 function readSourceRows(inputPath) {
-  const content = fs.readFileSync(inputPath, "utf8").replace(/\r\n/g, "\n").trim();
-  const lines = content.split("\n").filter((line) => line.trim() !== "");
+  const content = fs.readFileSync(inputPath, "utf8");
+  const sourceRows = parse(content, {
+    bom: true,
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+  });
 
-  if (lines.length < 2) {
+  if (sourceRows.length < 1) {
     throw new Error(`Source CSV does not contain any data rows: ${inputPath}`);
   }
 
-  const headers = parseCsvLine(lines[0]);
+  const headers = Object.keys(sourceRows[0]);
   validateSourceHeaders(headers);
 
-  return lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const row = {};
-
-    headers.forEach((header, index) => {
-      row[header] = cells[index] ?? "";
-    });
-
-    return row;
-  });
+  return sourceRows;
 }
 
 function validateSourceHeaders(headers) {
@@ -225,95 +248,39 @@ function inferBarometricPressure(sourceRows) {
 }
 
 function mapTargetValue(label, row, barometricPressureKpa) {
-  const time = row[SOURCE_COLUMNS.time];
-  const throttle = row[SOURCE_COLUMNS.throttle];
-  const rpm = row[SOURCE_COLUMNS.rpm];
-  const timingAdvance = row[SOURCE_COLUMNS.timingAdvance];
-  const vehicleSpeed = row[SOURCE_COLUMNS.vehicleSpeed];
-  const shortTermFuelTrim = row[SOURCE_COLUMNS.shortTermFuelTrim];
-  const longTermFuelTrim = row[SOURCE_COLUMNS.longTermFuelTrim];
-  const intakeAirTemp = row[SOURCE_COLUMNS.intakeAirTemp];
-  const manifoldAirTemp = row[SOURCE_COLUMNS.manifoldAirTemp];
-  const coolantTemp = row[SOURCE_COLUMNS.coolantTemp];
-  const knockRetard = row[SOURCE_COLUMNS.knockRetard];
+  const computedValues = {
+    lambda: convert(readNumber(row, SOURCE_COLUMNS.afrGas), STOICH_AFR_GAS, "/"),
+    mapPsi: convert(readNumber(row, SOURCE_COLUMNS.mapKpa), KPA_TO_PSI),
+    mafLbMin: convert(readNumber(row, SOURCE_COLUMNS.mafGps), GRAMS_PER_SECOND_TO_LB_PER_MIN),
+    loadPercent: convert(readNumber(row, SOURCE_COLUMNS.absoluteLoad), 100),
+    barometricPressureKpa,
+    row,
+  };
 
-  const lambda = divideIfFinite(readNumber(row, SOURCE_COLUMNS.afrGas), STOICH_AFR_GAS);
-  const mapPsi = multiplyIfFinite(readNumber(row, SOURCE_COLUMNS.mapKpa), KPA_TO_PSI);
-  const mafLbMin = multiplyIfFinite(
-    readNumber(row, SOURCE_COLUMNS.mafGps),
-    GRAMS_PER_SECOND_TO_LB_PER_MIN,
-  );
-  const loadPercent = multiplyIfFinite(readNumber(row, SOURCE_COLUMNS.absoluteLoad), 100);
+  if (STATIC_VALUES.has(label)) {
+    return STATIC_VALUES.get(label);
+  }
+
+  if (DIRECT_VALUE_SOURCES.has(label)) {
+    return DIRECT_VALUE_SOURCES.get(label)(computedValues);
+  }
 
   switch (label) {
-    case "Offset":
-      return time;
     case "WB EQ Ratio Bank 1":
-      return lambda;
-    case "Knock Retard":
-      return knockRetard;
-    case "Short Term Fuel Trim Bank 1":
-      return shortTermFuelTrim;
-    case "Long Term Fuel Trim Bank 1":
-      return longTermFuelTrim;
     case "Equivalence Ratio Commanded (SAE)":
-      return lambda;
-    case "Timing Advance":
-    case "Timing Advance (SAE)":
-      return timingAdvance;
+    case "WB EQ Ratio 1 (SAE) (2)":
+      return computedValues.lambda;
     case "Manifold Absolute Pressure":
     case "Intake Manifold Absolute Pressure (SAE)":
-      return mapPsi;
+      return computedValues.mapPsi;
     case "Mass Airflow":
     case "Mass Airflow (SAE)":
-      return mafLbMin;
-    case "Fuel System #1 Status (SAE)":
-      return "---";
-    case "Engine RPM":
-    case "Engine RPM (SAE)":
-      return rpm;
-    case "Intake Cam Des Angle":
-    case "Intake Cam Angle":
-    case "Exhaust Cam Des Angle":
-    case "Exhaust Cam Angle":
-      return 0;
-    case "WB EQ Ratio 1 (SAE) (2)":
-      return lambda;
-    case "Fuel Pressure":
-    case "Fuel Rail Pressure (SAE)":
-    case "Actual Engine Torque (SAE)":
-    case "Mass Airflow Sensor":
-    case "Engine Fuel Rate (SAE)":
-    case "Injector Pulse Width":
-    case "Catalyst Temp B1S1 (SAE)":
-    case "Control Module Voltage":
-    case "Fuel Level Input (SAE)":
-      return 0;
-    case "Accelerator Position D (SAE)":
-    case "Commanded Throttle Actuator (SAE)":
-    case "Relative Throttle Position (SAE)":
-    case "Accelerator Pedal Position":
-    case "Throttle Position (SAE)":
-      return throttle;
+      return computedValues.mafLbMin;
     case "Calculated Engine Load (SAE)":
     case "Absolute Load (SAE)":
-      return loadPercent;
-    case "Long Term Fuel Trim Bank 1 (SAE)":
-      return longTermFuelTrim;
-    case "Short Term Fuel Trim Bank 1 (SAE)":
-      return shortTermFuelTrim;
-    case "Vehicle Speed":
-      return vehicleSpeed;
-    case "Intake Air Temp (SAE)":
-      return intakeAirTemp;
-    case "Intake Air Temp":
-      return manifoldAirTemp;
-    case "Engine Coolant Temp":
-      return coolantTemp;
+      return computedValues.loadPercent;
     case "Barometric Pressure":
-      return barometricPressureKpa;
-    case "Ambient Air Temp":
-      return intakeAirTemp;
+      return computedValues.barometricPressureKpa;
     default:
       return 0;
   }
@@ -324,44 +291,21 @@ function readNumber(row, columnName) {
   return Number.isFinite(value) ? value : NaN;
 }
 
-function divideIfFinite(value, divisor) {
-  return Number.isFinite(value) ? value / divisor : NaN;
-}
-
-function multiplyIfFinite(value, multiplier) {
-  return Number.isFinite(value) ? value * multiplier : NaN;
-}
-
-function parseCsvLine(line) {
-  const cells = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const next = line[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (char === "," && !inQuotes) {
-      cells.push(current);
-      current = "";
-      continue;
-    }
-
-    current += char;
+function convert(value, factor, operator = "*") {
+  if (!Number.isFinite(value)) {
+    return NaN;
   }
 
-  cells.push(current);
-  return cells;
+  return operator === "/" ? value / factor : value * factor;
+}
+
+function parseCsvRow(line) {
+  return parse(line, {
+    bom: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    trim: true,
+  })[0] || [];
 }
 
 function toCsvCell(value) {
