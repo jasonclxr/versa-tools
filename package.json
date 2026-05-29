@@ -1,0 +1,21 @@
+{
+  "name": "tuning-tools",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/jasonclxr/tuning-tools#readme",
+  "bugs": {
+    "url": "https://github.com/jasonclxr/tuning-tools/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jasonclxr/tuning-tools.git"
+  },
+  "license": "ISC",
+  "author": "Jason Blecman",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "convert:avo": "node scripts/convert-avo-to-hp.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
