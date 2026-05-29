@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const childProcess = require("child_process");
-const { parse } = require("csv-parse/sync");
+const { parse, stringify } = require("csv/sync");
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline/promises");
@@ -10,29 +10,44 @@ const { stdin, stdout } = require("process");
 const STOICH_AFR_GAS = 14.7;
 const KPA_TO_PSI = 0.1450377377;
 const GRAMS_PER_SECOND_TO_LB_PER_MIN = 0.13227735731;
+const PROJECT_ROOT = path.join(__dirname, "..");
+const LOGS_DIR = path.join(PROJECT_ROOT, "logs");
+const PENDING_LOGS_DIR = path.join(LOGS_DIR, "pending");
+const CONVERTED_LOGS_DIR = path.join(LOGS_DIR, "converted");
+const DEFAULT_REFERENCE_CANDIDATES = [
+  path.join(PROJECT_ROOT, "HP Log format - All Channels.csv"),
+  path.join(PROJECT_ROOT, "HPFormat.csv"),
+];
 
-const DEFAULT_REFERENCE_PATH = path.join(
-  __dirname,
-  "..",
-  "HP Log format - All Channels.csv",
+const DEFAULT_REFERENCE_PATH = DEFAULT_REFERENCE_CANDIDATES.find((candidate) =>
+  fs.existsSync(candidate),
 );
 
-const SOURCE_COLUMNS = {
-  time: "Time (s)",
-  absoluteLoad: "Absolute load",
-  throttle: "Absolute throttle position 1 (%)",
-  afrGas: "Actual equivalence/air to fuel ratio (AFR gas)",
-  coolantTemp: "Engine coolant temperature (°F)",
-  rpm: "Engine RPM",
-  timingAdvance: "Ignition timing advance (°)",
-  intakeAirTemp: "Intake air temperature (°F)",
-  mapKpa: "Intake manifold absolute pressure (kPa)",
-  knockRetard: "Knock retard (°)",
-  longTermFuelTrim: "Long term fuel trim (%)",
-  manifoldAirTemp: "Manifold air temperature (°F)",
-  mafGps: "Mass airflow (g/s)",
-  shortTermFuelTrim: "Short term fuel trim (primary sensor) (%)",
-  vehicleSpeed: "Vehicle speed (mph)",
+const SOURCE_COLUMN_OPTIONS = {
+  time: ["Time (s)"],
+  absoluteLoad: ["Absolute load"],
+  throttle: ["Absolute throttle position 1 (%)"],
+  acceleratorPedal: ["Accelerator pedal position (%)"],
+  afrGas: ["Actual equivalence/air to fuel ratio (AFR gas)"],
+  actualLambda: ["Actual equivalence/air to fuel ratio (λ)"],
+  commandedLambda: ["Desired equivalence/air to fuel ratio (λ)"],
+  coolantTemp: ["Engine coolant temperature (°F)"],
+  rpm: ["Engine RPM"],
+  timingAdvance: ["Ignition timing advance (°)"],
+  intakeAirTemp: ["Intake air temperature (°F)"],
+  mapKpa: ["Intake manifold absolute pressure (kPa)"],
+  knockRetard: ["Knock retard (°)"],
+  longTermFuelTrim: ["Long term fuel trim (%)"],
+  manifoldAirTemp: ["Manifold air temperature (°F)", "Intake air temperature (°F)"],
+  mafGps: ["Mass airflow (g/s)"],
+  shortTermFuelTrim: ["Short term fuel trim (primary sensor) (%)"],
+  vehicleSpeed: ["Vehicle speed (mph)"],
+  catalystTemp: ["Catalyst Temperature (%)"],
+  intakeCamDesired: ["Desired intake camshaft advance from max retard position (°)"],
+  intakeCamActual: ["Actual intake camshaft advance from max retard position (°)"],
+  exhaustCamDesired: ["Desired exhaust camshaft retard from max advance position (°)"],
+  exhaustCamActual: ["Actual exhaust camshaft retard from max advance position (°)"],
+  injectorPulseWidth: ["Fuel injection pulse width (ms)"],
 };
 
 const STATIC_VALUES = new Map([
@@ -53,49 +68,62 @@ const STATIC_VALUES = new Map([
 ]);
 
 const DIRECT_VALUE_SOURCES = new Map([
-  ["Offset", ({ row }) => row[SOURCE_COLUMNS.time]],
-  ["Knock Retard", ({ row }) => row[SOURCE_COLUMNS.knockRetard]],
-  ["Short Term Fuel Trim Bank 1", ({ row }) => row[SOURCE_COLUMNS.shortTermFuelTrim]],
-  ["Long Term Fuel Trim Bank 1", ({ row }) => row[SOURCE_COLUMNS.longTermFuelTrim]],
-  ["Timing Advance", ({ row }) => row[SOURCE_COLUMNS.timingAdvance]],
-  ["Timing Advance (SAE)", ({ row }) => row[SOURCE_COLUMNS.timingAdvance]],
-  ["Engine RPM", ({ row }) => row[SOURCE_COLUMNS.rpm]],
-  ["Engine RPM (SAE)", ({ row }) => row[SOURCE_COLUMNS.rpm]],
-  ["Accelerator Position D (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
-  ["Commanded Throttle Actuator (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
-  ["Relative Throttle Position (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
-  ["Accelerator Pedal Position", ({ row }) => row[SOURCE_COLUMNS.throttle]],
-  ["Throttle Position (SAE)", ({ row }) => row[SOURCE_COLUMNS.throttle]],
-  ["Long Term Fuel Trim Bank 1 (SAE)", ({ row }) => row[SOURCE_COLUMNS.longTermFuelTrim]],
-  ["Short Term Fuel Trim Bank 1 (SAE)", ({ row }) => row[SOURCE_COLUMNS.shortTermFuelTrim]],
-  ["Vehicle Speed", ({ row }) => row[SOURCE_COLUMNS.vehicleSpeed]],
-  ["Intake Air Temp (SAE)", ({ row }) => row[SOURCE_COLUMNS.intakeAirTemp]],
-  ["Intake Air Temp", ({ row }) => row[SOURCE_COLUMNS.manifoldAirTemp]],
-  ["Engine Coolant Temp", ({ row }) => row[SOURCE_COLUMNS.coolantTemp]],
-  ["Ambient Air Temp", ({ row }) => row[SOURCE_COLUMNS.intakeAirTemp]],
+  ["Offset", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "time")],
+  ["Knock Retard", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "knockRetard")],
+  ["Short Term Fuel Trim Bank 1", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "shortTermFuelTrim")],
+  ["Long Term Fuel Trim Bank 1", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "longTermFuelTrim")],
+  ["Timing Advance", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "timingAdvance")],
+  ["Timing Advance (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "timingAdvance")],
+  ["Engine RPM", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "rpm")],
+  ["Engine RPM (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "rpm")],
+  ["Accelerator Position D (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "acceleratorPedal")],
+  ["Commanded Throttle Actuator (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "throttle")],
+  ["Relative Throttle Position (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "throttle")],
+  ["Accelerator Pedal Position", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "acceleratorPedal")],
+  ["Throttle Position (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "throttle")],
+  ["Long Term Fuel Trim Bank 1 (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "longTermFuelTrim")],
+  ["Short Term Fuel Trim Bank 1 (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "shortTermFuelTrim")],
+  ["Vehicle Speed", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "vehicleSpeed")],
+  ["Catalyst Temp B1S1 (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "catalystTemp")],
+  ["Intake Air Temp (SAE)", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "intakeAirTemp")],
+  ["Intake Air Temp", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "manifoldAirTemp")],
+  ["Engine Coolant Temp", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "coolantTemp")],
+  ["Ambient Air Temp", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "intakeAirTemp")],
+  ["Intake Cam Des Angle", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "intakeCamDesired")],
+  ["Intake Cam Angle", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "intakeCamActual")],
+  ["Exhaust Cam Des Angle", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "exhaustCamDesired")],
+  ["Exhaust Cam Angle", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "exhaustCamActual")],
+  ["Injector Pulse Width", ({ row, sourceColumns }) => getSourceValue(row, sourceColumns, "injectorPulseWidth")],
 ]);
 
 async function main() {
-  const { inputPath, outputPath, referencePath } = await parseArgs(process.argv.slice(2));
+  const { selectedInputPath, inputPath, outputPath, referencePath } = await parseArgs(
+    process.argv.slice(2),
+  );
   const reference = readReferenceTemplate(referencePath);
-  const sourceRows = readSourceRows(inputPath);
-  const barometricPressureKpa = inferBarometricPressure(sourceRows);
-
-  const outputLines = [...reference.headerLines];
+  const { sourceRows, headers } = readSourceRows(inputPath);
+  const sourceColumns = resolveSourceColumns(headers);
+  const barometricPressureKpa = inferBarometricPressure(sourceRows, sourceColumns);
+  const unmappedSourceHeaders = findUnmappedSourceHeaders(headers, sourceColumns);
+  const outputRows = [];
 
   for (const row of sourceRows) {
     const values = reference.labels.map((label) =>
-      mapTargetValue(label, row, barometricPressureKpa),
+      mapTargetValue(label, row, sourceColumns, barometricPressureKpa),
     );
-    outputLines.push(values.map(toCsvCell).join(","));
+    outputRows.push(values.map(normalizeValue));
   }
 
-  fs.writeFileSync(outputPath, `${outputLines.join("\n")}\n`, "utf8");
-
-  console.log(`Converted ${sourceRows.length} rows.`);
-  console.log(`Source: ${inputPath}`);
-  console.log(`Reference: ${referencePath}`);
-  console.log(`Output: ${outputPath}`);
+  ensureDirectoryExists(path.dirname(outputPath));
+  const outputContent = [
+    reference.headerLines.join("\n"),
+    stringify(outputRows, { record_delimiter: "\n" }).trimEnd(),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .concat("\n");
+  fs.writeFileSync(outputPath, outputContent, "utf8");
+  reportUnmappedSourceHeaders(unmappedSourceHeaders);
 }
 
 async function parseArgs(argv) {
@@ -111,18 +139,27 @@ async function parseArgs(argv) {
     process.exit(1);
   }
 
-  const inputPath = await resolveInputPath(positional[0]);
-  const outputPath = path.resolve(
-    positional[1] || buildDefaultOutputPath(inputPath),
-  );
-  const referencePath = path.resolve(positional[2] || DEFAULT_REFERENCE_PATH);
+  const selectedInputPath = await resolveInputPath(positional[0]);
+  const inputPath = stagePendingInput(selectedInputPath);
+  const outputPath = path.resolve(positional[1] || buildDefaultOutputPath(inputPath));
+  const referencePath = path.resolve(positional[2] || resolveDefaultReferencePath());
 
-  return { inputPath, outputPath, referencePath };
+  return { selectedInputPath, inputPath, outputPath, referencePath };
 }
 
 function buildDefaultOutputPath(inputPath) {
   const parsed = path.parse(path.resolve(inputPath));
-  return path.join(parsed.dir, `HP Format - ${parsed.name} ${parsed.ext || ".csv"}`);
+  return path.join(CONVERTED_LOGS_DIR, `HP Format - ${parsed.name}${parsed.ext || ".csv"}`);
+}
+
+function resolveDefaultReferencePath() {
+  if (DEFAULT_REFERENCE_PATH) {
+    return DEFAULT_REFERENCE_PATH;
+  }
+
+  throw new Error(
+    `No default HP reference file found. Checked:\n- ${DEFAULT_REFERENCE_CANDIDATES.join("\n- ")}`,
+  );
 }
 
 async function resolveInputPath(explicitInputPath) {
@@ -141,10 +178,21 @@ async function resolveInputPath(explicitInputPath) {
 }
 
 function chooseCsvFileWithMacDialog() {
-  const script = [
-    'set selectedFile to choose file with prompt "Select the source CSV log"',
-    "return POSIX path of selectedFile",
-  ].join("\n");
+  const scriptLines = [];
+
+  if (fs.existsSync(PENDING_LOGS_DIR)) {
+    scriptLines.push(
+      `set defaultFolder to POSIX file "${escapeAppleScriptString(PENDING_LOGS_DIR)}"`,
+    );
+    scriptLines.push(
+      'set selectedFile to choose file with prompt "Select the source CSV log" default location defaultFolder',
+    );
+  } else {
+    scriptLines.push('set selectedFile to choose file with prompt "Select the source CSV log"');
+  }
+
+  scriptLines.push("return POSIX path of selectedFile");
+  const script = scriptLines.join("\n");
 
   try {
     return childProcess
@@ -172,7 +220,9 @@ async function promptForInputPathInTerminal() {
   const rl = readline.createInterface({ input: stdin, output: stdout });
 
   try {
-    const answer = await rl.question("Path to source CSV: ");
+    const answer = await rl.question(
+      `Path to source CSV${fs.existsSync(PENDING_LOGS_DIR) ? ` (pending folder: ${PENDING_LOGS_DIR})` : ""}: `,
+    );
     const trimmed = answer.trim();
 
     if (!trimmed) {
@@ -183,6 +233,31 @@ async function promptForInputPathInTerminal() {
   } finally {
     rl.close();
   }
+}
+
+function stagePendingInput(inputPath) {
+  ensureDirectoryExists(PENDING_LOGS_DIR);
+
+  if (isWithinDirectory(inputPath, PENDING_LOGS_DIR)) {
+    return path.resolve(inputPath);
+  }
+
+  const destinationPath = path.join(PENDING_LOGS_DIR, path.basename(inputPath));
+  fs.copyFileSync(inputPath, destinationPath);
+  return destinationPath;
+}
+
+function ensureDirectoryExists(directoryPath) {
+  fs.mkdirSync(directoryPath, { recursive: true });
+}
+
+function isWithinDirectory(filePath, directoryPath) {
+  const relativePath = path.relative(path.resolve(directoryPath), path.resolve(filePath));
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function escapeAppleScriptString(value) {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function readReferenceTemplate(referencePath) {
@@ -226,34 +301,53 @@ function readSourceRows(inputPath) {
     throw new Error(`Source CSV does not contain any data rows: ${inputPath}`);
   }
 
-  const headers = Object.keys(sourceRows[0]);
-  validateSourceHeaders(headers);
-
-  return sourceRows;
+  return {
+    sourceRows,
+    headers: Object.keys(sourceRows[0]),
+  };
 }
 
-function validateSourceHeaders(headers) {
-  const missing = Object.values(SOURCE_COLUMNS).filter((header) => !headers.includes(header));
+function resolveSourceColumns(headers) {
+  return Object.fromEntries(
+    Object.entries(SOURCE_COLUMN_OPTIONS).map(([key, candidates]) => [
+      key,
+      candidates.find((candidate) => headers.includes(candidate)),
+    ]),
+  );
+}
 
-  if (missing.length > 0) {
-    throw new Error(
-      `Source CSV is missing required columns:\n- ${missing.join("\n- ")}`,
-    );
+function findUnmappedSourceHeaders(headers, sourceColumns) {
+  const mappedHeaders = new Set(Object.values(sourceColumns).filter(Boolean));
+  return headers.filter((header) => !mappedHeaders.has(header));
+}
+
+function reportUnmappedSourceHeaders(headers) {
+  if (headers.length === 0) {
+    console.log("Unmapped source columns: none");
+    return;
+  }
+
+  console.log(`Unmapped source columns (${headers.length}):`);
+  for (const header of headers) {
+    console.log(`- ${header}`);
   }
 }
 
-function inferBarometricPressure(sourceRows) {
-  const firstMap = readNumber(sourceRows[0], SOURCE_COLUMNS.mapKpa);
+function inferBarometricPressure(sourceRows, sourceColumns) {
+  const firstMap = readNumber(sourceRows[0], sourceColumns.mapKpa);
   return Number.isFinite(firstMap) ? firstMap : 101.325;
 }
 
-function mapTargetValue(label, row, barometricPressureKpa) {
+function mapTargetValue(label, row, sourceColumns, barometricPressureKpa) {
+  const actualLambda = readActualLambda(row, sourceColumns);
   const computedValues = {
-    lambda: convert(readNumber(row, SOURCE_COLUMNS.afrGas), STOICH_AFR_GAS, "/"),
-    mapPsi: convert(readNumber(row, SOURCE_COLUMNS.mapKpa), KPA_TO_PSI),
-    mafLbMin: convert(readNumber(row, SOURCE_COLUMNS.mafGps), GRAMS_PER_SECOND_TO_LB_PER_MIN),
-    loadPercent: convert(readNumber(row, SOURCE_COLUMNS.absoluteLoad), 100),
+    lambda: actualLambda,
+    commandedLambda: readCommandedLambda(row, sourceColumns),
+    mapPsi: convert(readNumber(row, sourceColumns.mapKpa), KPA_TO_PSI),
+    mafLbMin: convert(readNumber(row, sourceColumns.mafGps), GRAMS_PER_SECOND_TO_LB_PER_MIN),
+    loadPercent: convert(readNumber(row, sourceColumns.absoluteLoad), 100),
     barometricPressureKpa,
+    sourceColumns,
     row,
   };
 
@@ -267,9 +361,10 @@ function mapTargetValue(label, row, barometricPressureKpa) {
 
   switch (label) {
     case "WB EQ Ratio Bank 1":
-    case "Equivalence Ratio Commanded (SAE)":
     case "WB EQ Ratio 1 (SAE) (2)":
       return computedValues.lambda;
+    case "Equivalence Ratio Commanded (SAE)":
+      return computedValues.commandedLambda;
     case "Manifold Absolute Pressure":
     case "Intake Manifold Absolute Pressure (SAE)":
       return computedValues.mapPsi;
@@ -284,6 +379,29 @@ function mapTargetValue(label, row, barometricPressureKpa) {
     default:
       return 0;
   }
+}
+
+function readActualLambda(row, sourceColumns) {
+  const actualLambda = readNumber(row, sourceColumns.actualLambda);
+  if (Number.isFinite(actualLambda)) {
+    return actualLambda;
+  }
+
+  return convert(readNumber(row, sourceColumns.afrGas), STOICH_AFR_GAS, "/");
+}
+
+function readCommandedLambda(row, sourceColumns) {
+  const commandedLambda = readNumber(row, sourceColumns.commandedLambda);
+  if (Number.isFinite(commandedLambda)) {
+    return commandedLambda;
+  }
+
+  return readActualLambda(row, sourceColumns);
+}
+
+function getSourceValue(row, sourceColumns, logicalName) {
+  const header = sourceColumns[logicalName];
+  return header ? row[header] : undefined;
 }
 
 function readNumber(row, columnName) {
@@ -306,14 +424,6 @@ function parseCsvRow(line) {
     skip_empty_lines: true,
     trim: true,
   })[0] || [];
-}
-
-function toCsvCell(value) {
-  const normalized = normalizeValue(value);
-  if (/[",\n]/.test(normalized)) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-  return normalized;
 }
 
 function normalizeValue(value) {
