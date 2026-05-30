@@ -38,7 +38,7 @@ Arguments:
   reference.csv  Optional HP Tuners reference CSV. Defaults to HPFormat.csv when available.
 
 Behavior:
-  - If no input path is provided, the script prompts for one.
+  - If no input path is provided, the script opens a file picker on macOS and Windows, or prompts in the terminal elsewhere.
   - Selected inputs are copied into ${pendingLogsDir} before conversion.
   - Converted logs are written to logs/converted by default.`);
 }

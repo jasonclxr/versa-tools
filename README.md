@@ -39,22 +39,7 @@ node scripts/convert-vs-to-hp.js [input.csv] [output.csv] [reference.csv]
 
 All three arguments are optional.
 
-## Default Behavior
-
-If you do not pass an input file:
-
-- on macOS, the script opens a file picker
-- otherwise, it prompts for a path in the terminal
-
-If you do not pass an output path, the converted file is written to:
-
-```text
-logs/converted/HP Format - <input name>.csv
-```
-
-If you do not pass a reference file, the script uses the first matching default file it finds in the repo root.
-
-The selected source file is also copied into `logs/pending/` before conversion unless it is already there.
+If you omit `input.csv`, the converter opens a native file picker on macOS and Windows. On other platforms, it falls back to asking for the path in the terminal.
 
 ## Examples
 
@@ -81,3 +66,4 @@ Show the built-in help:
 ```bash
 npm run convert -- --help
 ```
+

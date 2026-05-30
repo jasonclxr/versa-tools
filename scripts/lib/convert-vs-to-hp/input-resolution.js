@@ -16,6 +16,13 @@ async function resolveInputPath(explicitInputPath, pendingLogsDir) {
     }
   }
 
+  if (process.platform === "win32") {
+    const selectedPath = chooseCsvFileWithWindowsDialog(pendingLogsDir);
+    if (selectedPath) {
+      return path.resolve(selectedPath);
+    }
+  }
+
   return promptForInputPathInTerminal(pendingLogsDir);
 }
 
@@ -39,6 +46,50 @@ function chooseCsvFileWithMacDialog(pendingLogsDir) {
   try {
     return childProcess
       .execFileSync("osascript", ["-e", script], { encoding: "utf8" })
+      .trim();
+  } catch (error) {
+    const stderr = error.stderr?.toString() || "";
+    const stdoutText = error.stdout?.toString() || "";
+    const combined = `${stderr}\n${stdoutText}`;
+
+    if (combined.includes("User canceled")) {
+      console.error("File selection canceled.");
+      process.exit(1);
+    }
+
+    return "";
+  }
+}
+
+function chooseCsvFileWithWindowsDialog(pendingLogsDir) {
+  const scriptLines = [
+    "Add-Type -AssemblyName System.Windows.Forms",
+    "$dialog = New-Object System.Windows.Forms.OpenFileDialog",
+    '$dialog.Title = "Select the source CSV log"',
+    '$dialog.Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*"',
+  ];
+
+  if (fs.existsSync(pendingLogsDir)) {
+    scriptLines.push(
+      `$dialog.InitialDirectory = '${escapePowerShellString(path.resolve(pendingLogsDir))}'`,
+    );
+  }
+
+  scriptLines.push("$result = $dialog.ShowDialog()");
+  scriptLines.push(
+    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.FileName) }",
+  );
+  scriptLines.push(
+    "elseif ($result -eq [System.Windows.Forms.DialogResult]::Cancel) { [Console]::Error.Write('User canceled') ; exit 1 }",
+  );
+
+  try {
+    return childProcess
+      .execFileSync(
+        "powershell.exe",
+        ["-NoProfile", "-STA", "-Command", scriptLines.join("; ")],
+        { encoding: "utf8" },
+      )
       .trim();
   } catch (error) {
     const stderr = error.stderr?.toString() || "";
@@ -79,6 +130,10 @@ async function promptForInputPathInTerminal(pendingLogsDir) {
 
 function escapeAppleScriptString(value) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function escapePowerShellString(value) {
+  return value.replace(/'/g, "''");
 }
 
 module.exports = {
