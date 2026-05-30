@@ -77,10 +77,8 @@ function chooseCsvFileWithWindowsDialog(pendingLogsDir) {
 
   scriptLines.push("$result = $dialog.ShowDialog()");
   scriptLines.push(
-    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.FileName) }",
-  );
-  scriptLines.push(
-    "elseif ($result -eq [System.Windows.Forms.DialogResult]::Cancel) { [Console]::Error.Write('User canceled') ; exit 1 }",
+    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.FileName) } " +
+      "elseif ($result -eq [System.Windows.Forms.DialogResult]::Cancel) { [Console]::Error.Write('User canceled') ; exit 1 }",
   );
 
   try {
