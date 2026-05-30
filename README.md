@@ -1,8 +1,8 @@
-# tuning-tools
+# versa-tools
 
 Small Node.js utilities for tuning workflows.
 
-At the moment, this repo is mainly for converting a VersaTuner CSV log into an HP Tuners-style CSV using a reference template.
+At the moment, this repo is mainly for converting a VersaTuner CSV log into an VCM Reader-style CSV using a reference template.
 
 ## Setup
 
@@ -11,11 +11,6 @@ Install dependencies:
 ```bash
 npm install
 ```
-
-Make sure you also have an HP Tuners reference CSV available. By default, the script looks for one of these files in the repo root:
-
-- `HP Log format - All Channels.csv`
-- `HPFormat.csv`
 
 ## Usage
 
