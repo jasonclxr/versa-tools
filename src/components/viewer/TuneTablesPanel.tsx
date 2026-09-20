@@ -47,7 +47,7 @@ export function TuneTablesPanel({ log, range }: Props) {
         <div className="panel-header">Implied tune tables</div>
         <p className="settings-card-note">
           This log does not include the channels needed to reconstruct ignition, fueling, or MAF
-          tables (RPM plus load/timing/AFR/MAF).
+          tables. MAF needs both MAF voltage (V) and MAF airflow (g/s).
         </p>
       </div>
     )

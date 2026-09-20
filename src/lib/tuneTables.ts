@@ -111,17 +111,6 @@ const PRESETS: TunePresetDef[] = [
   {
     id: 'maf',
     label: 'MAF',
-    xRole: 'rpm',
-    yRole: 'absoluteLoad',
-    zRoles: ['mafGps'],
-    defaultAgg: 'avg',
-    colorMode: 'heat',
-    xKind: 'rpm',
-    yKind: 'load',
-  },
-  {
-    id: 'maf-scale',
-    label: 'MAF scaling',
     xRole: 'mafVoltage',
     yRole: null,
     zRoles: ['mafGps'],
@@ -171,6 +160,22 @@ function channelLabel(log: ParsedLog, id: string): string {
   return ch.unit ? `${ch.name} (${ch.unit})` : ch.name
 }
 
+function pickByRoleOrName(
+  log: ParsedLog,
+  role: ChannelRole,
+): string | undefined {
+  const byRole = findChannelByRole(log.channels, role)
+  if (byRole) return byRole
+  if (role !== 'mafVoltage') return undefined
+  const hit = log.channels.find((c) => {
+    const blob = `${c.name} ${c.unit ?? ''} ${c.id}`.toLowerCase()
+    const looksMaf = /maf|mass\s*air|air\s*flow|afm/.test(blob)
+    const looksVolt = c.unit?.toLowerCase() === 'v' || /volt|\(v\)/.test(blob)
+    return looksMaf && looksVolt
+  })
+  return hit?.id
+}
+
 function pickZ(log: ParsedLog, roles: ChannelRole[], ids?: string[]): string | undefined {
   for (const role of roles) {
     const id = findChannelByRole(log.channels, role)
@@ -198,7 +203,7 @@ function yEdgesFor(log: ParsedLog, def: TunePresetDef, yChannelId: string | null
 export function resolveAvailableTuneTables(log: ParsedLog): ResolvedTuneTable[] {
   const resolved: ResolvedTuneTable[] = []
   for (const def of PRESETS) {
-    const xChannelId = findChannelByRole(log.channels, def.xRole)
+    const xChannelId = pickByRoleOrName(log, def.xRole)
     const zChannelId = pickZ(log, def.zRoles, def.zIds)
     if (!xChannelId || !zChannelId) continue
     const yChannelId = def.yRole ? (findChannelByRole(log.channels, def.yRole) ?? null) : null
