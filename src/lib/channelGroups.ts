@@ -46,6 +46,7 @@ const ROLE_CATEGORY: Record<ChannelRole, ChannelCategory> = {
   targetBoost: 'air',
   wgdc: 'air',
   mafGps: 'air',
+  mafVoltage: 'air',
   afrGas: 'fuel',
   actualLambda: 'fuel',
   commandedLambda: 'fuel',

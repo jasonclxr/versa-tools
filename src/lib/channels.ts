@@ -142,6 +142,13 @@ export const ROLE_ALIASES: Record<ChannelRole, string[]> = {
     'Mass Air Flow (g/s)',
     'Mass air flow (g/s)',
   ],
+  mafVoltage: [
+    'Mass air flow sensor (V)',
+    'MAF (V)',
+    'MAF Voltage (V)',
+    'Mass Air Flow (V)',
+    'Mass airflow (V)',
+  ],
   vehicleSpeed: [
     'Vehicle speed (mph)',
     'Vehicle Speed (mph)',

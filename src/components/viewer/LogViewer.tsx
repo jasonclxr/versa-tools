@@ -12,8 +12,9 @@ import { UPlotPane } from '../charts/UPlotPane'
 import { ChannelPicker } from './ChannelPicker'
 import { MapTablePanel } from './MapTablePanel'
 import { PowerPanel } from './PowerPanel'
+import { TuneTablesPanel } from './TuneTablesPanel'
 
-export type ViewerPage = 'charts' | 'map' | 'power'
+export type ViewerPage = 'charts' | 'map' | 'tune' | 'power'
 
 interface Props {
   log: ParsedLog
@@ -255,6 +256,12 @@ export function LogViewer({ log, page, onPageChange }: Props) {
       {page === 'map' && (
         <div className="viewer-page-content">
           <MapTablePanel log={displayLog} range={analysisRange} />
+        </div>
+      )}
+
+      {page === 'tune' && (
+        <div className="viewer-page-content">
+          <TuneTablesPanel log={displayLog} range={analysisRange} />
         </div>
       )}
 

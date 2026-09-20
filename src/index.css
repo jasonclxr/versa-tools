@@ -684,6 +684,29 @@ select {
   margin-bottom: 0.4rem;
 }
 
+.tune-note {
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tune-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.65rem;
+}
+
+.tune-tabs button {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.55rem;
+}
+
+.tune-sites input {
+  color: var(--muted);
+}
+
 .converter {
   max-width: 960px;
   margin: 0 auto;

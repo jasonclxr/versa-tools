@@ -96,6 +96,15 @@ export default function App() {
               <button
                 type="button"
                 role="tab"
+                aria-selected={tab === 'viewer' && viewerPage === 'tune'}
+                className={tab === 'viewer' && viewerPage === 'tune' ? 'active' : ''}
+                onClick={() => goViewer('tune')}
+              >
+                Tune
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={tab === 'viewer' && viewerPage === 'power'}
                 className={tab === 'viewer' && viewerPage === 'power' ? 'active' : ''}
                 onClick={() => goViewer('power')}

@@ -27,7 +27,8 @@ export type MapAgg = 'avg' | 'max' | 'min' | 'count'
 
 export interface MapTableOptions {
   xChannelId: string
-  yChannelId: string
+  /** Omit for a 1D table (all samples in a single row). */
+  yChannelId: string | null
   zChannelId: string
   xEdges: number[]
   yEdges: number[]
@@ -104,6 +105,13 @@ export function defaultMapPsiEdges(): number[] {
   return edges
 }
 
+/** Typical 5 V MAF sensor sites for implied scaling curves. */
+export function defaultMafVoltageEdges(): number[] {
+  const edges: number[] = []
+  for (let v = 10; v <= 45; v += 1) edges.push(v / 10)
+  return edges
+}
+
 export function suggestAxisChannels(log: ParsedLog): {
   xId: string
   yId: string
@@ -166,14 +174,18 @@ function emptyCell(): MapTableCell {
 
 export function buildMapTable(log: ParsedLog, options: MapTableOptions): MapTableResult | null {
   const xCh = log.channels.find((c) => c.id === options.xChannelId)
-  const yCh = log.channels.find((c) => c.id === options.yChannelId)
+  const yCh = options.yChannelId
+    ? log.channels.find((c) => c.id === options.yChannelId)
+    : null
   const zCh = log.channels.find((c) => c.id === options.zChannelId)
-  if (!xCh || !yCh || !zCh) return null
+  if (!xCh || !zCh) return null
+  if (options.yChannelId && !yCh) return null
   if (options.xEdges.length < 1 || options.yEdges.length < 1) return null
 
   // Axis lists are map *sites* (including endpoints like load=2 and RPM=7500).
   const nx = options.xEdges.length
   const ny = options.yEdges.length
+  const oneDimensional = !yCh
   const cells: MapTableCell[][] = Array.from({ length: ny }, () =>
     Array.from({ length: nx }, () => emptyCell()),
   )
@@ -189,13 +201,20 @@ export function buildMapTable(log: ParsedLog, options: MapTableOptions): MapTabl
   let hitCount = 0
   for (let i = i0; i <= i1; i++) {
     const xv = xCh.data[i]
-    const yv = yCh.data[i]
     const zv = zCh.data[i]
-    if (!Number.isFinite(xv) || !Number.isFinite(yv) || !Number.isFinite(zv)) continue
+    if (!Number.isFinite(xv) || !Number.isFinite(zv)) continue
     if (isDecelFuelCutSample(zCh, zv)) continue
     const xi = siteIndex(xv, options.xEdges)
-    const yi = siteIndex(yv, options.yEdges)
-    if (xi < 0 || yi < 0) continue
+    if (xi < 0) continue
+    let yi = 0
+    if (!oneDimensional && yCh) {
+      const yv = yCh.data[i]
+      if (!Number.isFinite(yv)) continue
+      yi = siteIndex(yv, options.yEdges)
+      if (yi < 0) continue
+    } else if (oneDimensional) {
+      yi = 0
+    }
     const cell = cells[yi][xi]
     cell.sum += zv
     cell.count += 1

@@ -39,6 +39,7 @@ export type ChannelRole =
   | 'exhaustCamActual'
   | 'injectorPulseWidth'
   | 'gear'
+  | 'mafVoltage'
 
 export interface ParsedChannel {
   id: string
