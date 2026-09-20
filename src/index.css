@@ -624,7 +624,8 @@ select {
 }
 
 .map-scroll {
-  overflow: visible;
+  overflow: auto;
+  max-width: 100%;
   background: #0b0f14;
   border: 1px solid var(--border-soft);
   border-radius: 8px;

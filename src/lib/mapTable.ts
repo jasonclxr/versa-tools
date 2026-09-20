@@ -105,10 +105,15 @@ export function defaultMapPsiEdges(): number[] {
   return edges
 }
 
-/** Typical 5 V MAF sensor sites for implied scaling curves. */
+/** VersaTuner Mazda MAF sites: 5 V / 256 ≈ 0.01953 V, 256 breakpoints 0–4.98015 V. */
+export const MAF_VOLTAGE_STEP = 0.01953
+const MAF_VOLTAGE_SITE_COUNT = 256
+
 export function defaultMafVoltageEdges(): number[] {
   const edges: number[] = []
-  for (let v = 10; v <= 45; v += 1) edges.push(v / 10)
+  for (let i = 0; i < MAF_VOLTAGE_SITE_COUNT; i++) {
+    edges.push(Math.round(i * MAF_VOLTAGE_STEP * 1e5) / 1e5)
+  }
   return edges
 }
 

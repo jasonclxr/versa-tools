@@ -3,8 +3,8 @@ import { cellColor, type MapAgg, type MapTableResult } from '../../lib/mapTable'
 export function formatMapEdge(n: number): string {
   if (Math.abs(n) >= 100) return n.toFixed(0)
   if (Math.abs(n) >= 10) return n.toFixed(1)
-  const rounded = Math.round(n * 10000) / 10000
-  const s = rounded.toFixed(4).replace(/\.?0+$/, '')
+  const rounded = Math.round(n * 1e5) / 1e5
+  const s = rounded.toFixed(5).replace(/\.?0+$/, '')
   return s === '-0' ? '0' : s
 }
 
