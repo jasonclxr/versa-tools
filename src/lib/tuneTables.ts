@@ -120,6 +120,18 @@ const PRESETS: TunePresetDef[] = [
     yKind: 'none',
   },
   {
+    id: 'maf-corr',
+    label: 'MAF corr.',
+    xRole: 'mafVoltage',
+    yRole: null,
+    zRoles: [],
+    zIds: ['__derived_maf_trim_corrected'],
+    defaultAgg: 'avg',
+    colorMode: 'heat',
+    xKind: 'mafVoltage',
+    yKind: 'none',
+  },
+  {
     id: 'wgdc',
     label: 'Wastegate',
     xRole: 'rpm',

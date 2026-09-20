@@ -40,6 +40,9 @@ export function addDerivedChannels(log: ParsedLog): void {
   const lambdaCh = channelByRole(log, 'actualLambda')
   const cmdLambdaCh = channelByRole(log, 'commandedLambda')
   const knockCh = channelByRole(log, 'knockRetard')
+  const mafCh = channelByRole(log, 'mafGps')
+  const stftCh = channelByRole(log, 'shortTermFuelTrim')
+  const ltftCh = channelByRole(log, 'longTermFuelTrim')
 
   let boostData: Float64Array | undefined = boostCh?.data
 
@@ -175,6 +178,35 @@ export function addDerivedChannels(log: ParsedLog): void {
       unit: '°',
       role: null,
       data: activity,
+      derived: true,
+    })
+  }
+
+  // Logged MAF × (1 + STFT% + LTFT%) → implied MAF table that would zero the trims.
+  if (mafCh && (stftCh || ltftCh)) {
+    const data = new Float64Array(n)
+    for (let i = 0; i < n; i++) {
+      const maf = mafCh.data[i]
+      if (!Number.isFinite(maf)) {
+        data[i] = Number.NaN
+        continue
+      }
+      const stft = stftCh?.data[i]
+      const ltft = ltftCh?.data[i]
+      const hasSt = typeof stft === 'number' && Number.isFinite(stft)
+      const hasLt = typeof ltft === 'number' && Number.isFinite(ltft)
+      if (!hasSt && !hasLt) {
+        data[i] = Number.NaN
+        continue
+      }
+      data[i] = maf * (1 + ((hasSt ? stft : 0) + (hasLt ? ltft : 0)) / 100)
+    }
+    pushDerived(log, {
+      id: '__derived_maf_trim_corrected',
+      name: 'MAF (corrected)',
+      unit: mafCh.unit ?? 'g/s',
+      role: null,
+      data,
       derived: true,
     })
   }
